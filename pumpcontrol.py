@@ -112,7 +112,6 @@ def auth_hue(db, url):
         data = {"devicetype": "Pump controller"}
         r = requests.post(f"{url}/api", json=data, verify=False)
         if r.status_code == 200:
-            print(r.json())
             for p in r.json():
                 if "success" in p:
                     db["hue_id"] = p["success"]["username"]
@@ -149,7 +148,6 @@ def set_running(hue_id, url, pump, state):
     r = requests.put(f"{url}/api/{hue_id}/lights/{pump}/state", json=newstate, verify=False)
     if r.status_code != 200:
         raise SystemError("Setting Hue {PUMPNAME} to running: {state} failed")
-    print(r.text)
 
 if __name__ == "__main__":
     url = find_hue()
@@ -157,7 +155,7 @@ if __name__ == "__main__":
 
     hue_id = auth_hue(db, url)
     pumpid = find_pump(hue_id, url)
-    print(pumpid)
+
     correct_state = should_run(db)
     current_state = is_running(hue_id, url, pumpid)
 
