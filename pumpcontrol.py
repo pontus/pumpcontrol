@@ -62,8 +62,11 @@ def should_run(db):
 
     prices = get_prices(db)
 
-    prices.sort(key=lambda x: x["value"])
+    prices.sort(key=lambda x: float(x["value"]))
+    sys.stderr(f"Prices are {prices}\n")
+
     interesting_prices = list(filter(price_apply, prices))[:RUNTIME]
+    sys.stderr(f"After filtering, prices are {interesting_prices}\n")
 
     # Price timestamps are in UTC
     # We have already checked borders and only need to see i we're
