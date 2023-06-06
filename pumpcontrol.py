@@ -11,7 +11,7 @@ import random
 import dateutil.parser
 import datetime
 import sys
-import logger
+import logging
 
 MAX_WAIT = 150
 # Do not run before local time hours
@@ -25,6 +25,7 @@ REGION = "SE3"
 
 
 logger = logging.getLogger()
+
 
 class HueController(zeroconf.ServiceListener):
     # Only handle one bridge for now
@@ -156,9 +157,12 @@ def is_running(hue_id, url, pump):
 def set_running(hue_id, url, pump, state):
     newstate = {"on": state}
     logger.info(f"Setting state of pump to f{newstate['on']}")
-    r = requests.put(f"{url}/api/{hue_id}/lights/{pump}/state", json=newstate, verify=False)
+    r = requests.put(
+        f"{url}/api/{hue_id}/lights/{pump}/state", json=newstate, verify=False
+    )
     if r.status_code != 200:
         raise SystemError("Setting Hue {PUMPNAME} to running: {state} failed")
+
 
 if __name__ == "__main__":
     url = find_hue()
@@ -172,10 +176,8 @@ if __name__ == "__main__":
 
     logger.debug(f"Currently running for {PUMPNAME} is {current_state}\n")
     logger.debug(f"Should be running for {PUMPNAME} is {correct_state}\n")
-    
+
     if current_state != correct_state:
         logger.debug(f"Need to change state of {PUMPNAME} running to {correct_state}\n")
 
         set_running(hue_id, url, pumpid, correct_state)
-
-    
