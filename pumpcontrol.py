@@ -11,6 +11,7 @@ import random
 import dateutil.parser
 import datetime
 import sys
+import logger
 
 MAX_WAIT = 150
 # Do not run before local time hours
@@ -22,6 +23,8 @@ RUNTIME = 4
 PUMPNAME = "Poolpump"
 REGION = "SE3"
 
+
+logger = logging.getLogger()
 
 class HueController(zeroconf.ServiceListener):
     # Only handle one bridge for now
@@ -41,6 +44,7 @@ class HueController(zeroconf.ServiceListener):
         if info.port == 443:
             proto = "https"
         self._url = f"{proto}://{host}"
+        logger.debug(f"Noticed Hue Controller at {self._url}")
 
     @property
     def url(self):
@@ -63,10 +67,10 @@ def should_run(db):
     prices = get_prices(db)
 
     prices.sort(key=lambda x: float(x["value"]))
-    sys.stderr(f"Prices are {prices}\n")
+    logger.debug(f"Prices are {prices}\n")
 
     interesting_prices = list(filter(price_apply, prices))[:RUNTIME]
-    sys.stderr(f"After filtering, prices are {interesting_prices}\n")
+    logger.debug(f"After filtering, prices are {interesting_prices}\n")
 
     # Price timestamps are in UTC
     # We have already checked borders and only need to see i we're
@@ -85,6 +89,7 @@ def get_prices(db):
     if key in db:
         return json.loads(db[key])
 
+    logger.debug("Fetching spot prices")
     r = requests.get(f"https://spot.utilitarian.io/electricity/SE3/latest")
     if r.status_code != 200:
         raise SystemError("could not fetch electricity info")
@@ -97,7 +102,7 @@ def find_hue():
     "Find a Hue locally through zeroconf"
     zc = zeroconf.Zeroconf()
     listener = HueController()
-    browser = zeroconf.ServiceBrowser(zc, "_hue._tcp.local.", listener)
+    _browser = zeroconf.ServiceBrowser(zc, "_hue._tcp.local.", listener)
 
     count = 0
     while count < MAX_WAIT and not listener.url:
@@ -124,6 +129,7 @@ def auth_hue(db, url):
     hue_id = db["hue_id"]
     if type(hue_id) == type(b""):
         hue_id = hue_id.decode()
+    logger.debug(f"Found hue id {hue_id}")
     return hue_id
 
 
@@ -134,6 +140,7 @@ def find_pump(hue_id, url):
     hue = r.json()
     for p in hue["lights"]:
         if hue["lights"][p]["name"] == PUMPNAME:
+            logger.debug(f"Found pump {PUMPNAME}")
             return p
     raise SystemError(f"{PUMPNAME} not found in list of controlled units")
 
@@ -148,6 +155,7 @@ def is_running(hue_id, url, pump):
 
 def set_running(hue_id, url, pump, state):
     newstate = {"on": state}
+    logger.info(f"Setting state of pump to f{newstate['on']}")
     r = requests.put(f"{url}/api/{hue_id}/lights/{pump}/state", json=newstate, verify=False)
     if r.status_code != 200:
         raise SystemError("Setting Hue {PUMPNAME} to running: {state} failed")
@@ -162,11 +170,11 @@ if __name__ == "__main__":
     correct_state = should_run(db)
     current_state = is_running(hue_id, url, pumpid)
 
-    sys.stderr.write(f"Currently running for {PUMPNAME} is {current_state}\n")
-    sys.stderr.write(f"Should be running for {PUMPNAME} is {correct_state}\n")
+    logger.debug(f"Currently running for {PUMPNAME} is {current_state}\n")
+    logger.debug(f"Should be running for {PUMPNAME} is {correct_state}\n")
     
     if current_state != correct_state:
-        sys.stderr.write(f"Setting {PUMPNAME} running to {correct_state}\n")
+        logger.debug(f"Need to change state of {PUMPNAME} running to {correct_state}\n")
 
         set_running(hue_id, url, pumpid, correct_state)
 
