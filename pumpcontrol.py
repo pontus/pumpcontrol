@@ -27,6 +27,19 @@ REGION = "SE3"
 logger = logging.getLogger()
 
 
+def setup_logger(
+    console_level=logging.DEBUG, file_level=logging.DEBUG, filename="pumpcontrol.log"
+):
+    h = logging.StreamHandler()
+    h.setLevel(console_level)
+    logger.addHandler(h)
+    f = logging.FileHandler(filename)
+    f.setFormatter(logging.Formatter('{asctime} - {levelname} - {message}', style='{'))
+    f.setLevel(file_level)
+    logger.addHandler(f)
+
+    logger.setLevel(min(file_level, console_level))
+
 class HueController(zeroconf.ServiceListener):
     # Only handle one bridge for now
     _url = None
@@ -165,6 +178,8 @@ def set_running(hue_id, url, pump, state):
 
 
 if __name__ == "__main__":
+    setup_logger()
+
     url = find_hue()
     db = dbm.open("pumpcontrol.db", "c")
 
