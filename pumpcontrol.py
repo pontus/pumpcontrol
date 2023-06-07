@@ -76,11 +76,12 @@ def setup_logger(
     h.setLevel(console_level)
     logger.addHandler(h)
     f = logging.FileHandler(filename)
-    f.setFormatter(logging.Formatter('{asctime} - {levelname} - {message}', style='{'))
+    f.setFormatter(logging.Formatter("{asctime} - {levelname} - {message}", style="{"))
     f.setLevel(file_level)
     logger.addHandler(f)
 
     logger.setLevel(min(file_level, console_level))
+
 
 class HueController(zeroconf.ServiceListener):
     # Only handle one bridge for now
