@@ -22,9 +22,51 @@ USE_SUNRISE = False
 RUNTIME = 4
 PUMPNAME = "Poolpump"
 REGION = "SE3"
+OVERRIDE_DATA = ""
 
 
 logger = logging.getLogger()
+
+
+def override_active():
+    current_data = False
+
+    if not OVERRIDE_DATA:
+        return (False, False)
+    logger.debug(f"Checking override data {OVERRIDE_DATA}\n")
+
+    r = requests.get(OVERRIDE_DATA)
+    if r.status_code != 200:
+        raise SystemError("override URL set but failed to fetch")
+    j = json.loads(r.text.strip('"'))
+    if isinstance(j, dict):
+        j = [j]
+
+    now = datetime.datetime.now()
+    for p in j:
+        try:
+            start = dateutil.parser.parse(p["start"])
+            end = dateutil.parser.parse(p["end"])
+            if start <= now and now <= end:
+                # Matches
+                logger.debug(f"Matching override data {p}\n")
+
+                return True, p["state"]
+            if (
+                start.day == now.day
+                and start.month == now.month
+                and start.year == now.year
+            ) or (
+                end.day == now.day and end.month == now.month and end.year == now.year
+            ):
+                current_data = True
+        except:
+            pass
+
+    logger.debug(f"Returning form override check - override is {current_data}\n")
+
+    # Override info but no info for now, leave off
+    return (current_data, False)
 
 
 def setup_logger(
@@ -186,7 +228,9 @@ if __name__ == "__main__":
     hue_id = auth_hue(db, url)
     pumpid = find_pump(hue_id, url)
 
-    correct_state = should_run(db)
+    (apply, correct_state) = override_active()
+    if not apply:
+        correct_state = should_run(db)
     current_state = is_running(hue_id, url, pumpid)
 
     logger.debug(f"Currently running for {PUMPNAME} is {current_state}\n")
