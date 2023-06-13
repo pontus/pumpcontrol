@@ -38,7 +38,7 @@ def override_active():
     r = requests.get(OVERRIDE_DATA)
     if r.status_code != 200:
         raise SystemError("override URL set but failed to fetch")
-    j = json.loads(r.text.strip('"'))
+    j = json.loads(r.text.strip('"').encode("ascii").decode("unicode_escape"))
     if isinstance(j, dict):
         j = [j]
 
@@ -51,7 +51,11 @@ def override_active():
                 # Matches
                 logger.debug(f"Matching override data {p}\n")
 
-                return True, p["state"]
+                state = False
+                if p["state"] == True or p["state"] == "on" or p["state"] == "1":
+                    state = True
+
+                return True, state
             if (
                 start.day == now.day
                 and start.month == now.month
@@ -59,6 +63,7 @@ def override_active():
             ) or (
                 end.day == now.day and end.month == now.month and end.year == now.year
             ):
+                # Day matches but not within window - have it off
                 current_data = True
         except:
             pass
