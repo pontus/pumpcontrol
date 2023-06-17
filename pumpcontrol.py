@@ -15,35 +15,52 @@ import logging
 
 MAX_WAIT = 150
 # Do not run before local time hours
-NOT_BEFORE = 8
+DEFAULT_NOT_BEFORE = 8
 # Do not run after local time hours
-NOT_AFTER = 19
+DEFAULT_NOT_AFTER = 19
 USE_SUNRISE = False
-RUNTIME = 4
+DEFAULT_RUNTIME = 4
 PUMPNAME = "Poolpump"
 REGION = "SE3"
-OVERRIDE_DATA = ""
+CONTROL_BASE = (
+    "https://poolpumpcontrol-d4382-default-rtdb.europe-west1.firebasedatabase.app"
+)
 
 
 logger = logging.getLogger()
 
 
-def override_active():
-    current_data = False
+def get_config():
+    if not CONTROL_BASE:
+        return False
+    logger.debug(f"Checking control data {CONTROL_BASE}/.json\n")
 
-    if not OVERRIDE_DATA:
-        return (False, False)
-    logger.debug(f"Checking override data {OVERRIDE_DATA}\n")
-
-    r = requests.get(OVERRIDE_DATA)
+    r = requests.get(f"{CONTROL_BASE}/.json")
     if r.status_code != 200:
         raise SystemError("override URL set but failed to fetch")
     j = json.loads(r.text.strip('"').encode("ascii").decode("unicode_escape"))
-    if isinstance(j, dict):
-        j = [j]
+
+    if not "config" in j:
+        j["config"] = {}
+
+    if not "notafter" in j["config"]:
+        j["config"]["notafter"] = DEFAULT_NOT_AFTER
+    if not "notbefore" in j["config"]:
+        j["config"]["notbefore"] = DEFAULT_NOT_BEFORE
+    if not "runtime" in j["config"]:
+        j["config"]["runtime"] = DEFAULT_RUNTIME
+
+    return j
+
+
+def override_active(config):
+    current_data = False
+
+    if not "override" in config:
+        return (False, False)
 
     now = datetime.datetime.now()
-    for p in j:
+    for p in config["override"]:
         try:
             start = dateutil.parser.parse(p["start"])
             end = dateutil.parser.parse(p["end"])
@@ -113,17 +130,19 @@ class HueController(zeroconf.ServiceListener):
         return self._url
 
 
-def price_apply(p):
+def price_apply(p, config):
     t = dateutil.parser.parse(p["timestamp"])
     offset = time.localtime().tm_gmtoff / 3600
-    if (t.hour + offset >= NOT_BEFORE) and (t.hour + offset < NOT_AFTER):
+    if (t.hour + offset >= config["config"]["notbefore"]) and (
+        t.hour + offset < config["config"]["notafter"]
+    ):
         return True
     return False
 
 
-def should_run(db):
+def should_run(db, config):
     t = time.localtime().tm_hour
-    if t < NOT_BEFORE or t >= NOT_AFTER:
+    if t < config["config"]["notbefore"] or t >= config["config"]["notafter"]:
         return False
 
     prices = get_prices(db)
@@ -131,7 +150,9 @@ def should_run(db):
     prices.sort(key=lambda x: float(x["value"]))
     logger.debug(f"Prices are {prices}\n")
 
-    interesting_prices = list(filter(price_apply, prices))[:RUNTIME]
+    interesting_prices = list(filter(lambda x: price_apply(x, config), prices))[
+        : config["config"]["runtime"]
+    ]
     logger.debug(f"After filtering, prices are {interesting_prices}\n")
 
     # Price timestamps are in UTC
@@ -234,9 +255,10 @@ if __name__ == "__main__":
     hue_id = auth_hue(db, url)
     pumpid = find_pump(hue_id, url)
 
-    (apply, correct_state) = override_active()
+    config = get_config()
+    (apply, correct_state) = override_active(config)
     if not apply:
-        correct_state = should_run(db)
+        correct_state = should_run(db, config)
     current_state = is_running(hue_id, url, pumpid)
 
     logger.debug(f"Currently running for {PUMPNAME} is {current_state}\n")
