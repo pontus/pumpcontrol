@@ -130,6 +130,19 @@ class HueController(zeroconf.ServiceListener):
         return self._url
 
 
+def price_modif(p, config):
+    t = dateutil.parser.parse(p["timestamp"])
+    offset = time.localtime().tm_gmtoff / 3600
+    if (t.hour + offset >= config["config"]["notbefore"]) and (
+        t.hour + offset < config["config"]["notafter"]
+    ):
+        return p
+
+    ##Lägg till en straffkrona
+    p["value"] = float(p["value"]) + 100
+    return p
+
+
 def price_apply(p, config):
     t = dateutil.parser.parse(p["timestamp"])
     offset = time.localtime().tm_gmtoff / 3600
@@ -146,13 +159,12 @@ def should_run(db, config):
         return False
 
     prices = get_prices(db)
+    prices = list(map(lambda x: price_modif(x, config), prices))
 
     prices.sort(key=lambda x: float(x["value"]))
     logger.debug(f"Prices are {prices}\n")
 
-    interesting_prices = list(filter(lambda x: price_apply(x, config), prices))[
-        : config["config"]["runtime"]
-    ]
+    interesting_prices = prices[: config["config"]["runtime"]]
     logger.debug(f"After filtering, prices are {interesting_prices}\n")
 
     # Price timestamps are in UTC
