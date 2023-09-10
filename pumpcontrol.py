@@ -11,6 +11,7 @@ import random
 import dateutil.parser
 import datetime
 import sys
+import typing
 import logging
 
 MAX_WAIT = 150
@@ -20,6 +21,8 @@ DEFAULT_NOT_BEFORE = 8
 DEFAULT_NOT_AFTER = 19
 USE_SUNRISE = False
 DEFAULT_RUNTIME = 4
+DEFAULT_OTHERSADD = 4
+
 PUMPNAME = "Poolpump"
 REGION = "SE3"
 CONTROL_BASE = (
@@ -49,6 +52,8 @@ def get_config():
         j["config"]["notbefore"] = DEFAULT_NOT_BEFORE
     if not "runtime" in j["config"]:
         j["config"]["runtime"] = DEFAULT_RUNTIME
+    if not "othersadd" in j["config"]:
+        j["config"]["othersadd"] = DEFAULT_OTHERSADD
 
     return j
 
@@ -116,7 +121,7 @@ class HueController(zeroconf.ServiceListener):
         self._url = None
 
     def add_service(self, zc: zeroconf.Zeroconf, type_: str, name: str) -> None:
-        info = zc.get_service_info(type_, name)
+        info = typing.cast(zeroconf.ServiceInfo, zc.get_service_info(type_, name))
         host = socket.inet_ntoa(info.addresses[0])
 
         proto = "http"
@@ -138,8 +143,8 @@ def price_modif(p, config):
     ):
         return p
 
-    ##Lägg till en straffkrona
-    p["value"] = float(p["value"]) + 100
+    ## Allow other hours but add some extra charge
+    p["value"] = float(p["value"]) + config["othersadd"]
     return p
 
 
