@@ -91,7 +91,8 @@ def get_config() -> AllConfig:
 def override_active(config: OverrideConfig) -> typing.Tuple[bool, bool]:
     current_data = False
 
-    if not "override" in config:
+    
+    if not len (config):
         return (False, False)
 
     now = datetime.datetime.now()
