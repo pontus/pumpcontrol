@@ -29,13 +29,48 @@ CONTROL_BASE = (
     "https://poolpumpcontrol-d4382-default-rtdb.europe-west1.firebasedatabase.app"
 )
 
+defaults = {
+    "notafter": DEFAULT_NOT_AFTER,
+    "notbefore": DEFAULT_NOT_BEFORE,
+    "runtime": DEFAULT_RUNTIME,
+    "othersadd": DEFAULT_OTHERSADD,
+}
+
+
+class Price(typing.TypedDict):
+    value: float
+    timestamp: datetime.datetime
+
+
+class Override(typing.TypedDict):
+    start: str
+    end: str
+    state: bool
+
+
+class Config(typing.TypedDict):
+    notafter: float
+    notbefore: float
+    runtime: float
+    othersadd: float
+
+
+OverrideConfig: typing.TypeAlias = "typing.List[Override]"
+Database: typing.TypeAlias = "dbm._Database"
+
+
+class AllConfig(typing.TypedDict):
+    config: Config
+    override: list[Override]
+
 
 logger = logging.getLogger()
 
 
-def get_config():
+def get_config() -> AllConfig:
     if not CONTROL_BASE:
-        return False
+        return typing.cast(AllConfig, {"config": defaults, "override": []})
+
     logger.debug(f"Checking control data {CONTROL_BASE}/.json\n")
 
     r = requests.get(f"{CONTROL_BASE}/.json")
@@ -44,28 +79,23 @@ def get_config():
     j = json.loads(r.text.strip('"').encode("ascii").decode("unicode_escape"))
 
     if not "config" in j:
-        j["config"] = {}
+        j["config"] = defaults
 
-    if not "notafter" in j["config"]:
-        j["config"]["notafter"] = DEFAULT_NOT_AFTER
-    if not "notbefore" in j["config"]:
-        j["config"]["notbefore"] = DEFAULT_NOT_BEFORE
-    if not "runtime" in j["config"]:
-        j["config"]["runtime"] = DEFAULT_RUNTIME
-    if not "othersadd" in j["config"]:
-        j["config"]["othersadd"] = DEFAULT_OTHERSADD
+    for p in ("notafter", "notbefore", "runtime", "othersadd"):
+        if not p in j["config"]:
+            j["config"][p] = defaults[p]
 
     return j
 
 
-def override_active(config):
+def override_active(config: OverrideConfig) -> typing.Tuple[bool, bool]:
     current_data = False
 
     if not "override" in config:
         return (False, False)
 
     now = datetime.datetime.now()
-    for p in config["override"]:
+    for p in config:
         try:
             start = dateutil.parser.parse(p["start"])
             end = dateutil.parser.parse(p["end"])
@@ -90,15 +120,17 @@ def override_active(config):
         except:
             pass
 
-    logger.debug(f"Returning form override check - override is {current_data}\n")
+    logger.debug(f"Returning from override check - override is {current_data}\n")
 
     # Override info but no info for now, leave off
     return (current_data, False)
 
 
 def setup_logger(
-    console_level=logging.DEBUG, file_level=logging.DEBUG, filename="pumpcontrol.log"
-):
+    console_level: int = logging.DEBUG,
+    file_level: int = logging.DEBUG,
+    filename: str = "pumpcontrol.log",
+) -> None:
     h = logging.StreamHandler()
     h.setLevel(console_level)
     logger.addHandler(h)
@@ -131,16 +163,13 @@ class HueController(zeroconf.ServiceListener):
         logger.debug(f"Noticed Hue Controller at {self._url}")
 
     @property
-    def url(self):
-        return self._url
+    def url(self) -> str:
+        return typing.cast(str, self._url)
 
 
-def price_modif(p, config):
-    t = dateutil.parser.parse(p["timestamp"])
-    offset = time.localtime().tm_gmtoff / 3600
-    if (t.hour + offset >= config["config"]["notbefore"]) and (
-        t.hour + offset < config["config"]["notafter"]
-    ):
+def price_modif(p: Price, config: Config) -> Price:
+    t = p["timestamp"]
+    if (t.hour >= config["notbefore"]) and (t.hour < config["notafter"]):
         return p
 
     ## Allow other hours but add some extra charge
@@ -148,20 +177,15 @@ def price_modif(p, config):
     return p
 
 
-def price_apply(p, config):
-    t = dateutil.parser.parse(p["timestamp"])
-    offset = time.localtime().tm_gmtoff / 3600
-    if (t.hour + offset >= config["config"]["notbefore"]) and (
-        t.hour + offset < config["config"]["notafter"]
-    ):
+def price_apply(p: Price, config: Config) -> bool:
+    t = p["timestamp"]
+    if (t.hour >= config["notbefore"]) and (t.hour < config["notafter"]):
         return True
     return False
 
 
-def should_run(db, config):
+def should_run(db: Database, config: Config) -> bool:
     t = time.localtime().tm_hour
-    if t < config["config"]["notbefore"] or t >= config["config"]["notafter"]:
-        return False
 
     prices = get_prices(db)
     prices = list(map(lambda x: price_modif(x, config), prices))
@@ -169,36 +193,44 @@ def should_run(db, config):
     prices.sort(key=lambda x: float(x["value"]))
     logger.debug(f"Prices are {prices}\n")
 
-    interesting_prices = prices[: config["config"]["runtime"]]
+    interesting_prices = prices[: int(config["runtime"])]
     logger.debug(f"After filtering, prices are {interesting_prices}\n")
 
-    # Price timestamps are in UTC
     # We have already checked borders and only need to see i we're
     # in one of the cheap slots
-    thishour = datetime.datetime.utcnow().hour
 
     for p in interesting_prices:
-        t = dateutil.parser.parse(p["timestamp"])
-        if t.hour == thishour:
+        if p["timestamp"].hour == t:
             return True
     return False
 
 
-def get_prices(db):
+def get_prices(db: Database) -> list[Price]:
     key = f"prices{time.strftime('%Y%m%d')}"
     if key in db:
-        return json.loads(db[key])
+        data = db[key]
+    else:
+        logger.debug("Fetching spot prices")
+        r = requests.get(f"https://spot.utilitarian.io/electricity/SE3/latest")
+        if r.status_code != 200:
+            raise SystemError("could not fetch electricity info")
 
-    logger.debug("Fetching spot prices")
-    r = requests.get(f"https://spot.utilitarian.io/electricity/SE3/latest")
-    if r.status_code != 200:
-        raise SystemError("could not fetch electricity info")
+        db[key] = r.text
+        data = r.text.encode("ascii")
 
-    db[key] = r.text
-    return json.loads(r.text)
+    def fix_entry(x: typing.Dict[str, str]) -> Price:
+        r = Price(
+            value=float(x["value"]),
+            timestamp=dateutil.parser.parse(x["timestamp"]).astimezone(),
+        )
+        return r
+
+    fixed = list(map(fix_entry, json.loads(data)))
+
+    return fixed
 
 
-def find_hue():
+def find_hue() -> str:
     "Find a Hue locally through zeroconf"
     zc = zeroconf.Zeroconf()
     listener = HueController()
@@ -215,25 +247,26 @@ def find_hue():
     return url
 
 
-def auth_hue(db, url):
+def auth_hue(db: Database, url: str) -> str:
     if not "hue_id" in db:
         data = {"devicetype": "Pump controller"}
         r = requests.post(f"{url}/api", json=data, verify=False)
         if r.status_code == 200:
             for p in r.json():
                 if "success" in p:
-                    db["hue_id"] = p["success"]["username"]
+                    db["hue_id"] = bytes(p["success"]["username"], "ascii")
 
     if "hue_id" not in db:
         raise SystemError("No user in hue")
-    hue_id = db["hue_id"]
-    if type(hue_id) == type(b""):
-        hue_id = hue_id.decode()
+
+    id = db["hue_id"]
+    hue_id = id.decode()
+
     logger.debug(f"Found hue id {hue_id}")
     return hue_id
 
 
-def find_pump(hue_id, url):
+def find_pump(hue_id: str, url: str) -> str:
     r = requests.get(f"{url}/api/{hue_id}", verify=False)
     if r.status_code != 200:
         raise SystemError("Getting Hue status failed")
@@ -245,7 +278,7 @@ def find_pump(hue_id, url):
     raise SystemError(f"{PUMPNAME} not found in list of controlled units")
 
 
-def is_running(hue_id, url, pump):
+def is_running(hue_id: str, url: str, pump: str) -> bool:
     r = requests.get(f"{url}/api/{hue_id}/lights/{pump}", verify=False)
     if r.status_code != 200:
         raise SystemError("Getting Hue pumpstatus failed")
@@ -253,7 +286,7 @@ def is_running(hue_id, url, pump):
     return hue["state"]["on"]
 
 
-def set_running(hue_id, url, pump, state):
+def set_running(hue_id: str, url: str, pump: str, state: bool) -> None:
     newstate = {"on": state}
     logger.info(f"Setting state of pump to f{newstate['on']}")
     r = requests.put(
@@ -272,10 +305,10 @@ if __name__ == "__main__":
     hue_id = auth_hue(db, url)
     pumpid = find_pump(hue_id, url)
 
-    config = get_config()
-    (apply, correct_state) = override_active(config)
+    allconfig = get_config()
+    (apply, correct_state) = override_active(allconfig["override"])
     if not apply:
-        correct_state = should_run(db, config)
+        correct_state = should_run(db, allconfig["config"])
     current_state = is_running(hue_id, url, pumpid)
 
     logger.debug(f"Currently running for {PUMPNAME} is {current_state}\n")
