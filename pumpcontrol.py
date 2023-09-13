@@ -178,18 +178,17 @@ def price_modif(p: Price, config: Config) -> Price:
     return p
 
 
-def price_apply(p: Price, config: Config) -> bool:
-    t = p["timestamp"]
-    if (t.hour >= config["notbefore"]) and (t.hour < config["notafter"]):
-        return True
+def price_apply(p: Price) -> bool:
+    d = time.localtime().tm_mday
+    if p["timestamp"].day != d:
+        return False
     return False
-
 
 def should_run(db: Database, config: Config) -> bool:
     t = time.localtime().tm_hour
 
     prices = get_prices(db)
-    prices = list(map(lambda x: price_modif(x, config), prices))
+    prices = list(filter(price_apply, map(lambda x: price_modif(x, config), prices)))
 
     prices.sort(key=lambda x: float(x["value"]))
     logger.debug(f"Prices are {prices}\n")
