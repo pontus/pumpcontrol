@@ -178,17 +178,12 @@ def price_modif(p: Price, config: Config) -> Price:
     return p
 
 
-def price_apply(p: Price) -> bool:
-    d = time.localtime().tm_mday
-    if p["timestamp"].day != d:
-        return False
-    return False
 
 def should_run(db: Database, config: Config) -> bool:
     t = time.localtime().tm_hour
 
     prices = get_prices(db)
-    prices = list(filter(price_apply, map(lambda x: price_modif(x, config), prices)))
+    prices = list( map(lambda x: price_modif(x, config), prices))
 
     prices.sort(key=lambda x: float(x["value"]))
     logger.debug(f"Prices are {prices}\n")
@@ -204,10 +199,16 @@ def should_run(db: Database, config: Config) -> bool:
             return True
     return False
 
+def price_apply(p: Price) -> bool:
+    d = time.localtime().tm_mday
 
-def get_prices(db: Database) -> list[Price]:
+    if p["timestamp"].day != d:
+        return False
+    return True
+
+def get_prices(db: Database, force: bool = False ) -> list[Price]:
     key = f"prices{time.strftime('%Y%m%d')}"
-    if key in db:
+    if key in db and not force:
         data = db[key]
     else:
         logger.debug("Fetching spot prices")
@@ -226,8 +227,13 @@ def get_prices(db: Database) -> list[Price]:
         return r
 
     fixed = list(map(fix_entry, json.loads(data)))
+    filtered = list(filter(price_apply, fixed) )
 
-    return fixed
+    if not force and not len(filtered):
+        # No entries, try with force if this isn't forced
+        return get_prices(db, True)
+
+    return filtered
 
 
 def find_hue() -> str:
