@@ -91,8 +91,7 @@ def get_config() -> AllConfig:
 def override_active(config: OverrideConfig) -> typing.Tuple[bool, bool]:
     current_data = False
 
-    
-    if not len (config):
+    if not len(config):
         return (False, False)
 
     now = datetime.datetime.now()
@@ -135,7 +134,9 @@ def setup_logger(
     h = logging.StreamHandler()
     h.setLevel(console_level)
     logger.addHandler(h)
-    f = logging.FileHandler(filename)
+    f = logging.handlers.TimedRotatingFileHandler(
+        filename, when="midnight", backupCount=30
+    )
     f.setFormatter(logging.Formatter("{asctime} - {levelname} - {message}", style="{"))
     f.setLevel(file_level)
     logger.addHandler(f)
@@ -178,12 +179,11 @@ def price_modif(p: Price, config: Config) -> Price:
     return p
 
 
-
 def should_run(db: Database, config: Config) -> bool:
     t = time.localtime().tm_hour
 
     prices = get_prices(db)
-    prices = list( map(lambda x: price_modif(x, config), prices))
+    prices = list(map(lambda x: price_modif(x, config), prices))
 
     prices.sort(key=lambda x: float(x["value"]))
     logger.debug(f"Prices are {prices}\n")
@@ -199,6 +199,7 @@ def should_run(db: Database, config: Config) -> bool:
             return True
     return False
 
+
 def price_apply(p: Price) -> bool:
     d = time.localtime().tm_mday
 
@@ -206,7 +207,8 @@ def price_apply(p: Price) -> bool:
         return False
     return True
 
-def get_prices(db: Database, force: bool = False ) -> list[Price]:
+
+def get_prices(db: Database, force: bool = False) -> list[Price]:
     key = f"prices{time.strftime('%Y%m%d')}"
     if key in db and not force:
         data = db[key]
@@ -227,7 +229,7 @@ def get_prices(db: Database, force: bool = False ) -> list[Price]:
         return r
 
     fixed = list(map(fix_entry, json.loads(data)))
-    filtered = list(filter(price_apply, fixed) )
+    filtered = list(filter(price_apply, fixed))
 
     if not force and not len(filtered):
         # No entries, try with force if this isn't forced
