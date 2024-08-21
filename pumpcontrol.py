@@ -95,6 +95,9 @@ def override_active(config: OverrideConfig) -> typing.Tuple[bool, bool]:
     if not len(config):
         return (False, False)
 
+    someothertime = dateutil.parser.parse(
+        "2020-01-01T00:00:00+00:00+00:00"
+    ).astimezone()
     now = datetime.datetime.now().astimezone()
     for p in config:
         try:
@@ -113,12 +116,20 @@ def override_active(config: OverrideConfig) -> typing.Tuple[bool, bool]:
                     state = True
 
                 return True, state
+
+            daystart = dateutil.parser.parse(
+                p["start"], default=someothertime
+            ).astimezone()
+            dayend = dateutil.parser.parse(p["end"], default=someothertime).astimezone()
+
             if (
-                start.day == now.day
-                and start.month == now.month
-                and start.year == now.year
+                daystart.day == now.day
+                and daystart.month == now.month
+                and daystart.year == now.year
             ) or (
-                end.day == now.day and end.month == now.month and end.year == now.year
+                dayend.day == now.day
+                and dayend.month == now.month
+                and dayend.year == now.year
             ):
                 # Day matches but not within window - have it off
                 current_data = True
