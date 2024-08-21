@@ -95,13 +95,16 @@ def override_active(config: OverrideConfig) -> typing.Tuple[bool, bool]:
     if not len(config):
         return (False, False)
 
-    now = datetime.datetime.now().astimezone().timestamp()
+    now = datetime.datetime.now().astimezone()
     for p in config:
         try:
-            start = dateutil.parser.parse(p["start"]).astimezone().timestamp()
-            end = dateutil.parser.parse(p["end"]).astimezone().timestamp()
+            start = dateutil.parser.parse(p["start"], default=now).astimezone()
+            end = dateutil.parser.parse(p["end"], default=now).astimezone()
 
-            if start <= now and now <= end:
+            if (
+                start.timestamp() <= now.timestamp()
+                and now.timestamp() <= end.timestamp()
+            ):
                 # Matches
                 logger.debug(f"Matching override data {p}\n")
 
