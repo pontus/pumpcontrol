@@ -66,6 +66,7 @@ class AllConfig(typing.TypedDict):
 
 
 logger = logging.getLogger()
+logHandlers = []
 
 
 def get_config() -> AllConfig:
@@ -157,7 +158,13 @@ def setup_logger(
     f.setLevel(file_level)
     logger.addHandler(f)
 
+    logHandlers.append(f, h)
     logger.setLevel(min(file_level, console_level))
+
+
+def flush_logs():
+    for p in logHandlers:
+        p.flush()
 
 
 class HueController(zeroconf.ServiceListener):
@@ -340,5 +347,6 @@ if __name__ == "__main__":
 
     if current_state != correct_state:
         logger.debug(f"Need to change state of {PUMPNAME} running to {correct_state}\n")
+        flush_logs()
 
         set_running(hue_id, url, pumpid, correct_state)
