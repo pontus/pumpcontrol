@@ -158,7 +158,8 @@ def setup_logger(
     f.setLevel(file_level)
     logger.addHandler(f)
 
-    logHandlers.append(f, h)
+    logHandlers.append(f)
+    logHandlers.append(h)
     logger.setLevel(min(file_level, console_level))
 
 
