@@ -196,7 +196,7 @@ def price_modif(p: Price, config: Config) -> Price:
 
 
 def should_run(db: Database, config: Config) -> bool:
-    t = time.localtime().tm_hour
+    t = time.localtime()
 
     prices = get_prices(db)
     prices = list(map(lambda x: price_modif(x, config), prices))
@@ -204,15 +204,16 @@ def should_run(db: Database, config: Config) -> bool:
     prices.sort(key=lambda x: float(x["value"]))
     logger.debug(f"Prices are {prices}\n")
 
-    interesting_prices = prices[: int(config["runtime"])]
+    interesting_prices = prices[: int(config["runtime"])*4]
     logger.debug(f"After filtering, prices are {interesting_prices}\n")
 
     # We have already checked borders and only need to see i we're
     # in one of the cheap slots
 
     for p in interesting_prices:
-        if p["timestamp"].hour == t:
-            return True
+        if p["timestamp"].hour == t.tm_hour:
+            if t.tm_min >= p["timestamp"].minute:
+                return True
     return False
 
 
